@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { scrapeOCC } from '../scrape.js';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +49,16 @@ app.post('/search', async (req, res) => {
         console.error('Error en la búsqueda:', error);
         res.json({ success: false, error: 'Error al procesar la búsqueda' });
     }
+});
+
+// Servir resultados.json desde la raíz del proyecto
+app.get('/resultados.json', (req, res) => {
+  const filePath = path.join(__dirname, '..', 'resultados.json');
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).send({ error: 'No hay resultados.json' });
+  }
 });
 
 app.listen(PORT, () => {

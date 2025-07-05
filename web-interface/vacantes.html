@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Vacantes destacadas</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="flex flex-col items-center min-h-screen py-8 px-8">
+    <div class="w-full max-w-6xl bg-white rounded-lg shadow p-8 mb-8">
+      <div class="flex items-center justify-between mb-8">
+        <h1 class="text-3xl font-bold">Vacantes destacadas</h1>
+        <button onclick="window.location='index.html'" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded shadow">← Volver</button>
+      </div>
+      <div class="flex flex-col md:flex-row gap-8">
+        <!-- Columna: Mayores sueldos -->
+        <div class="flex-1">
+          <div class="text-xl font-semibold text-cyan-700 mb-4 text-center md:text-left">🔝 Mayores sueldos</div>
+          <div id="topCards" class="flex flex-col gap-6 items-center md:items-stretch"></div>
+        </div>
+        <!-- Columna: Menores sueldos -->
+        <div class="flex-1">
+          <div class="text-xl font-semibold text-cyan-700 mb-4 text-center md:text-left">🔻 Menores sueldos</div>
+          <div id="lowCards" class="flex flex-col gap-6 items-center md:items-stretch"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    async function getVacantes() {
+      const res = await fetch('/resultados.json');
+      const data = await res.json();
+      return data.filter(v => v.sueldo && parseFloat(v.sueldo.replace(/[^\d.]/g, '')) > 0);
+    }
+    function parseSueldo(sueldo) {
+      if (!sueldo) return 0;
+      const match = sueldo.replace(/,/g, '').match(/\d+/);
+      return match ? parseInt(match[0], 10) : 0;
+    }
+    function getCantidad(total) {
+      if (total > 30) return 10;
+      if (total >= 20) return 8;
+      if (total >= 10) return 5;
+      return Math.min(3, Math.floor(total / 2));
+    }
+    function createCard(v) {
+      return `<div class="bg-white rounded-lg shadow p-5 w-full max-w-xs mx-auto flex flex-col gap-2 border border-cyan-100">
+        <div class="font-bold text-lg">${v.nombreVacante || 'Sin título'}</div>
+        <div class="text-gray-700">${v.empresa || 'No se muestra la empresa'}</div>
+        <div class="text-gray-500 text-sm">${v.ubicacion || 'Sin ubicación'}</div>
+        <div class="text-gray-500 text-sm">${v.detalles?.["Espacio de trabajo"] || 'Sin modalidad'}</div>
+        <div class="text-cyan-700 font-bold text-lg mt-1">${v.sueldo}</div>
+      </div>`;
+    }
+    async function render() {
+      const vacantes = await getVacantes();
+      if (!vacantes.length) {
+        document.getElementById('topCards').innerHTML = '<div class="text-gray-500">No hay vacantes con sueldo.</div>';
+        document.getElementById('lowCards').innerHTML = '';
+        return;
+      }
+      vacantes.sort((a, b) => parseSueldo(b.sueldo) - parseSueldo(a.sueldo));
+      const n = getCantidad(vacantes.length);
+      const top = vacantes.slice(0, n); // mayores
+      const low = [...vacantes].reverse().slice(0, n); // menores
+      document.getElementById('topCards').innerHTML = top.map(createCard).join('');
+      document.getElementById('lowCards').innerHTML = low.map(createCard).join('');
+    }
+    render();
+  </script>
+</body>
+</html> 

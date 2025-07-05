@@ -135,24 +135,10 @@ export async function scrapeOCC(searchTerm) {
     }
   }
   await browser.close();
-  return results;
-}
 
-async function main() {
-  const searchTerm = await askQuestion('¿Qué deseas buscar? ');
-  rl.close();
-  if (!searchTerm.trim()) {
-    console.error('❌ No ingresaste ningún término de búsqueda.');
-    process.exit(1);
-  }
-  const results = await scrapeOCC(searchTerm.trim());
-  if (results.length === 0) {
-    console.warn('⚠ No se encontraron vacantes o algo salió mal.');
-  }
-  
-  // Guardar JSON original
+  // Generar archivos SIEMPRE que se llame scrapeOCC
   fs.writeFileSync('resultados.json', JSON.stringify(results, null, 2), 'utf-8');
-  console.log('✅ Se guardaron ${results.length} resultados en resultados.json');
+  console.log(`✅ Se guardaron ${results.length} resultados en resultados.json`);
 
   // Crear estructura plana para CSV/Excel
   const datosPlano = results.map(result => ({
@@ -226,6 +212,21 @@ async function main() {
     } catch (error) {
       console.error('❌ Error al generar PDF:', error.message);
     }
+  }
+
+  return results;
+}
+
+async function main() {
+  const searchTerm = await askQuestion('¿Qué deseas buscar? ');
+  rl.close();
+  if (!searchTerm.trim()) {
+    console.error('❌ No ingresaste ningún término de búsqueda.');
+    process.exit(1);
+  }
+  const results = await scrapeOCC(searchTerm.trim());
+  if (results.length === 0) {
+    console.warn('⚠ No se encontraron vacantes o algo salió mal.');
   }
 }
 

@@ -4,92 +4,74 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Buscador de Scraping</title>
-    <style>
-        body {
-            background: #f5f5f5;
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-        }
-        .centered {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-        }
-        h1 {
-            margin-bottom: 2rem;
-            font-size: 2.2rem;
-            font-weight: bold;
-        }
-        .form-row {
-            display: flex;
-            gap: 1rem;
-            width: 100%;
-            max-width: 600px;
-        }
-        input[type="text"] {
-            flex: 1;
-            padding: 0.7rem 1rem;
-            font-size: 1.1rem;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-        }
-        button {
-            padding: 0.7rem 2rem;
-            font-size: 1.1rem;
-            background: #007bff;
-            color: #fff;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-        button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-        #status {
-            margin-top: 1.5rem;
-            font-size: 1rem;
-            color: #333;
-        }
-    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <div class="centered">
-        <h1>Buscador de Scraping</h1>
-        <form class="form-row" id="searchForm">
-            <input type="text" id="searchInput" placeholder="Buscar vacante" required>
-            <button type="submit" id="searchBtn">Buscar</button>
-        </form>
-        <div id="status"></div>
+<body class="bg-gray-100 min-h-screen">
+    <div class="flex flex-col items-center justify-center min-h-screen px-4">
+        <div class="w-full max-w-2xl bg-white rounded-lg shadow p-8">
+            <h1 class="mb-8 text-2xl md:text-4xl font-bold text-gray-800 text-center">Buscador de Vacantes</h1>
+            
+            <form id="searchForm" class="flex flex-col sm:flex-row gap-4 mb-6">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="Buscar vacante" 
+                    required
+                    class="flex-1 px-4 py-3 text-lg border border-gray-300 rounded focus:border-blue-500 focus:outline-none"
+                >
+                <button 
+                    type="submit" 
+                    id="searchBtn"
+                    class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded cursor-pointer transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                    Buscar
+                </button>
+            </form>
+            
+            <div id="status" class="mt-6 text-lg text-gray-700"></div>
+            
+            <button 
+                id="verVacantesBtn" 
+                onclick="window.location='vacantes.html'"
+                class="hidden mt-8 px-8 py-3 bg-blue-500 hover:bg-blue-700 text-white font-bold rounded cursor-pointer transition-colors"
+            >
+                Ver vacantes
+            </button>
+        </div>
     </div>
+
     <script>
         const searchForm = document.getElementById('searchForm');
         const searchInput = document.getElementById('searchInput');
         const searchBtn = document.getElementById('searchBtn');
         const status = document.getElementById('status');
+        const verVacantesBtn = document.getElementById('verVacantesBtn');
 
         searchForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const searchTerm = searchInput.value.trim();
+            
             if (!searchTerm) {
                 status.textContent = 'Por favor ingresa un término de búsqueda';
                 return;
             }
+
             status.textContent = 'Buscando y generando archivos...';
             searchBtn.disabled = true;
+            verVacantesBtn.classList.add('hidden');
+
             try {
                 const response = await fetch('/search', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ searchTerm })
                 });
+                
                 const data = await response.json();
+                
                 if (data.success) {
                     status.textContent = data.message;
+                    verVacantesBtn.classList.remove('hidden');
                 } else {
                     status.textContent = data.error || 'Error al buscar vacantes';
                 }
