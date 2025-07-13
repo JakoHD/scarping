@@ -12,154 +12,60 @@
         <h1 class="text-3xl font-bold">Vacantes destacadas</h1>
         <button onclick="window.location='index.html'" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded shadow">← Volver</button>
       </div>
-      
-      <!-- Filtros con tags -->
-      <div class="flex flex-wrap gap-4 mb-8 justify-center">
-        <button 
-          id="filterAll" 
-          onclick="filterVacantes('all')" 
-          class="px-6 py-3 bg-cyan-600 text-white font-bold rounded-lg shadow hover:bg-cyan-700 transition-colors filter-btn active"
-        >
-          📋 Todas las vacantes
-        </button>
-        <button 
-          id="filterTop" 
-          onclick="filterVacantes('top')" 
-          class="px-6 py-3 bg-gray-300 text-gray-700 font-bold rounded-lg shadow hover:bg-gray-400 transition-colors filter-btn"
-        >
-          🔝 Mayores sueldos
-        </button>
-        <button 
-          id="filterLow" 
-          onclick="filterVacantes('low')" 
-          class="px-6 py-3 bg-gray-300 text-gray-700 font-bold rounded-lg shadow hover:bg-gray-400 transition-colors filter-btn"
-        >
-          🔻 Menores sueldos
-        </button>
-      </div>
-
-      <!-- Contenedor de tarjetas -->
-      <div id="cardsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <!-- Las tarjetas se cargarán aquí dinámicamente -->
+      <div class="flex flex-col md:flex-row gap-8">
+        <!-- Columna: Mayores sueldos -->
+        <div class="flex-1">
+          <div class="text-xl font-semibold text-cyan-700 mb-4 text-center md:text-left">🔝 Mayores sueldos</div>
+          <div id="topCards" class="flex flex-col gap-6 items-center md:items-stretch"></div>
+        </div>
+        <!-- Columna: Menores sueldos -->
+        <div class="flex-1">
+          <div class="text-xl font-semibold text-cyan-700 mb-4 text-center md:text-left">🔻 Menores sueldos</div>
+          <div id="lowCards" class="flex flex-col gap-6 items-center md:items-stretch"></div>
+        </div>
       </div>
     </div>
   </div>
-
   <script>
-    let allVacantes = [];
-    let currentFilter = 'all';
-
     async function getVacantes() {
       const res = await fetch('/resultados.json');
       const data = await res.json();
-      return data;
+      return data.filter(v => v.sueldo && parseFloat(v.sueldo.replace(/[^\d.]/g, '')) > 0);
     }
-
-    function dedupVacantes(arr) {
-      const seen = new Set();
-      return arr.filter(v => {
-        const id = `${v.nombreVacante}|||${v.empresa}|||${v.ubicacion}`;
-        if (seen.has(id)) return false;
-        seen.add(id);
-        return true;
-      });
-    }
-
     function parseSueldo(sueldo) {
       if (!sueldo) return 0;
       const match = sueldo.replace(/,/g, '').match(/\d+/);
       return match ? parseInt(match[0], 10) : 0;
     }
-
     function getCantidad(total) {
       if (total > 30) return 10;
       if (total >= 20) return 8;
       if (total >= 10) return 5;
       return Math.min(3, Math.floor(total / 2));
     }
-
     function createCard(v) {
-      return `<div class="bg-white rounded-lg shadow p-5 border border-cyan-100 hover:shadow-lg transition-shadow">
-        <div class="font-bold text-lg mb-2">${v.nombreVacante || 'Sin título'}</div>
-        <div class="text-gray-700 mb-1">${v.empresa || 'No se muestra la empresa'}</div>
-        <div class="text-gray-500 text-sm mb-1">${v.ubicacion || 'Sin ubicación'}</div>
-        <div class="text-gray-500 text-sm mb-3">${(v.detalles?.["Espacio de trabajo"] || v.espacioDeTrabajo || 'Sin modalidad')}</div>
-        <div class="text-cyan-700 font-bold text-lg">${v.sueldo || ''}</div>
+      return `<div class="bg-white rounded-lg shadow p-5 w-full max-w-xs mx-auto flex flex-col gap-2 border border-cyan-100">
+        <div class="font-bold text-lg">${v.nombreVacante || 'Sin título'}</div>
+        <div class="text-gray-700">${v.empresa || 'No se muestra la empresa'}</div>
+        <div class="text-gray-500 text-sm">${v.ubicacion || 'Sin ubicación'}</div>
+        <div class="text-gray-500 text-sm">${v.detalles?.["Espacio de trabajo"] || 'Sin modalidad'}</div>
+        <div class="text-cyan-700 font-bold text-lg mt-1">${v.sueldo}</div>
       </div>`;
     }
-
-    function updateFilterButtons() {
-      // Remover clase active de todos los botones
-      document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.classList.remove('bg-cyan-600', 'text-white', 'hover:bg-cyan-700');
-        btn.classList.add('bg-gray-300', 'text-gray-700', 'hover:bg-gray-400');
-      });
-
-      // Agregar clase active al botón seleccionado
-      const activeBtn = document.getElementById(`filter${currentFilter.charAt(0).toUpperCase() + currentFilter.slice(1)}`);
-      if (activeBtn) {
-        activeBtn.classList.remove('bg-gray-300', 'text-gray-700', 'hover:bg-gray-400');
-        activeBtn.classList.add('bg-cyan-600', 'text-white', 'hover:bg-cyan-700');
-      }
-    }
-
-    function filterVacantes(filter) {
-      currentFilter = filter;
-      updateFilterButtons();
-      renderFilteredVacantes();
-    }
-
-    function renderFilteredVacantes() {
-      const container = document.getElementById('cardsContainer');
-      
-      if (!allVacantes.length) {
-        container.innerHTML = '<div class="col-span-full text-center text-gray-500 text-lg">No hay vacantes disponibles.</div>';
-        return;
-      }
-
-      let vacantesToShow = [];
-
-      switch (currentFilter) {
-        case 'all':
-          vacantesToShow = dedupVacantes(allVacantes);
-          break;
-        case 'top': {
-          const conSueldo = dedupVacantes(allVacantes.filter(v => parseSueldo(v.sueldo) > 0));
-          const n = getCantidad(conSueldo.length);
-          vacantesToShow = conSueldo.slice(0, n);
-          break;
-        }
-        case 'low': {
-          const conSueldo = dedupVacantes(allVacantes.filter(v => parseSueldo(v.sueldo) > 0));
-          const m = getCantidad(conSueldo.length);
-          vacantesToShow = conSueldo.slice(-m).reverse();
-          break;
-        }
-      }
-
-      if (vacantesToShow.length === 0) {
-        container.innerHTML = '<div class="col-span-full text-center text-gray-500 text-lg">No hay vacantes que coincidan con el filtro seleccionado.</div>';
-        return;
-      }
-
-      container.innerHTML = vacantesToShow.map(createCard).join('');
-    }
-
     async function render() {
-      allVacantes = await getVacantes();
-      
-      if (!allVacantes.length) {
-        document.getElementById('cardsContainer').innerHTML = '<div class="col-span-full text-center text-gray-500 text-lg">No hay vacantes con sueldo disponible.</div>';
+      const vacantes = await getVacantes();
+      if (!vacantes.length) {
+        document.getElementById('topCards').innerHTML = '<div class="text-gray-500">No hay vacantes con sueldo.</div>';
+        document.getElementById('lowCards').innerHTML = '';
         return;
       }
-
-      // Ordenar por sueldo (mayor a menor)
-      allVacantes.sort((a, b) => parseSueldo(b.sueldo) - parseSueldo(a.sueldo));
-      
-      // Mostrar todas las vacantes por defecto
-      renderFilteredVacantes();
+      vacantes.sort((a, b) => parseSueldo(b.sueldo) - parseSueldo(a.sueldo));
+      const n = getCantidad(vacantes.length);
+      const top = vacantes.slice(0, n); // mayores
+      const low = [...vacantes].reverse().slice(0, n); // menores
+      document.getElementById('topCards').innerHTML = top.map(createCard).join('');
+      document.getElementById('lowCards').innerHTML = low.map(createCard).join('');
     }
-
     render();
   </script>
 </body>
