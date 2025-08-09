@@ -10,42 +10,13 @@
     },
     {
       "src": "web-interface/server.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "maxDuration": 60
+      }
     }
   ],
   "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
-    },
-    {
-      "source": "/vacantes",
-      "destination": "/web-interface/vacantes.html"
-    },
-    {
-      "source": "/vacantes.html",
-      "destination": "/web-interface/vacantes.html"
-    },
-    {
-      "source": "/img/(.*)",
-      "destination": "/web-interface/img/$1"
-    },
-    {
-      "source": "/resultados.json",
-      "destination": "/web-interface/resultados.json"
-    },
-    {
-      "source": "/resultados.csv",
-      "destination": "/web-interface/resultados.csv"
-    },
-    {
-      "source": "/resultados.xlsx",
-      "destination": "/web-interface/resultados.xlsx"
-    },
-    {
-      "source": "/resultados.pdf",
-      "destination": "/web-interface/resultados.pdf"
-    },
     {
       "source": "/(.*)",
       "destination": "/web-interface/server.js"
@@ -55,18 +26,9 @@
     {
       "source": "/api/(.*)",
       "headers": [
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "GET, POST, OPTIONS"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type"
-        }
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type" }
       ]
     }
   ]

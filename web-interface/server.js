@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import fetch from 'node-fetch';
+import { scrapeOCC } from '../scrape.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,7 +30,7 @@ app.get('/vacantes.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'vacantes.html'));
 });
 
-// Endpoint para buscar - ahora usa la API de Vercel
+// Endpoint para buscar - invoca directamente el scraper (modo Vercel)
 app.post('/search', async (req, res) => {
     try {
         const { searchTerm } = req.body;
@@ -39,39 +40,20 @@ app.post('/search', async (req, res) => {
         }
 
         console.log(`Buscando: ${searchTerm}`);
-        
-        // Construir la URL del API con el host de la solicitud (funciona en Vercel y local)
-        const host = req.headers['x-forwarded-host'] || req.headers.host;
-        const proto = req.headers['x-forwarded-proto'] || (host?.includes('localhost') ? 'http' : 'https');
-        const apiUrl = `${proto}://${host}/api/scrape`;
 
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ searchTerm: searchTerm.trim() })
-        });
+        const results = await scrapeOCC(searchTerm.trim(), true);
 
-        // Si la respuesta no es OK, devolver el texto como error para depurar
-        if (!response.ok) {
-            const text = await response.text();
-            return res.status(500).json({ success: false, error: `API respondió ${response.status}: ${text.slice(0, 300)}` });
+        if (!Array.isArray(results) || results.length === 0) {
+            return res.json({ success: false, error: 'No se encontraron vacantes' });
         }
 
-        const data = await response.json();
-        
-        if (!data.success) {
-            return res.json({ success: false, error: data.error || 'Error al procesar la búsqueda' });
-        }
-
-        console.log(`Se encontraron ${data.count} vacantes`);
+        console.log(`Se encontraron ${results.length} vacantes`);
         
         res.json({ 
             success: true, 
-            message: `Se encontraron ${data.count} vacantes`,
-            count: data.count,
-            results: data.results
+            message: `Se encontraron ${results.length} vacantes`,
+            count: results.length,
+            results
         });
 
     } catch (error) {
