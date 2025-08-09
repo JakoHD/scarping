@@ -17,11 +17,10 @@
     "node-fetch": "^3.3.2",
     "pdfkit": "^0.17.1",
     "pdfmake": "^0.2.20",
-    "puppeteer": "^21.3.8",
-    "roboto-font": "^0.1.0",
+    "puppeteer": "^22.8.2",
     "xlsx": "^0.18.5"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "18.x"
   }
 }
