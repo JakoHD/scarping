@@ -15,9 +15,18 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
 
-// Servir el archivo HTML
+// Servir el archivo HTML principal
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Servir vacantes.html
+app.get('/vacantes', (req, res) => {
+    res.sendFile(path.join(__dirname, 'vacantes.html'));
+});
+
+app.get('/vacantes.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'vacantes.html'));
 });
 
 // Endpoint para buscar - ahora usa la API de Vercel
@@ -67,11 +76,39 @@ app.post('/search', async (req, res) => {
 
 // Servir resultados.json desde la raíz del proyecto
 app.get('/resultados.json', (req, res) => {
-  const filePath = path.join(__dirname, '..', 'resultados.json');
+  const filePath = path.join(__dirname, 'resultados.json');
   if (fs.existsSync(filePath)) {
     res.sendFile(filePath);
   } else {
     res.status(404).send({ error: 'No hay resultados.json' });
+  }
+});
+
+// Servir otros archivos de resultados
+app.get('/resultados.csv', (req, res) => {
+  const filePath = path.join(__dirname, 'resultados.csv');
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).send({ error: 'No hay resultados.csv' });
+  }
+});
+
+app.get('/resultados.xlsx', (req, res) => {
+  const filePath = path.join(__dirname, 'resultados.xlsx');
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).send({ error: 'No hay resultados.xlsx' });
+  }
+});
+
+app.get('/resultados.pdf', (req, res) => {
+  const filePath = path.join(__dirname, 'resultados.pdf');
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).send({ error: 'No hay resultados.pdf' });
   }
 });
 
@@ -100,14 +137,13 @@ app.get('/geocode', async (req, res) => {
     }
 });
 
-// Para Vercel, necesitamos exportar la app
-if (process.env.NODE_ENV === 'production') {
-    // Para Vercel
-    export default app;
-} else {
-    // Para desarrollo local
+// Iniciar el servidor solo si no estamos en producción (Vercel)
+if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
         console.log(`Servidor ejecutándose en http://localhost:${PORT}`);
         console.log(`Abre tu navegador y ve a: http://localhost:${PORT}`);
     });
-} 
+}
+
+// Exportar la app para Vercel
+export default app; 

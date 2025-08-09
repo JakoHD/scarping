@@ -15,6 +15,7 @@ Scrapin-OCC/
 ├── web-interface/         # Interfaz web
 │   ├── index.html         # Página principal
 │   ├── server.js          # Servidor Express
+│   ├── vacantes.html      # Página de resultados
 │   └── ...
 ├── scrape.js              # Lógica del scraper
 ├── vercel.json           # Configuración de Vercel
@@ -51,9 +52,25 @@ Scrapin-OCC/
 
 El proyecto incluye:
 
-- **`vercel.json`**: Configuración de rutas y builds
+- **`vercel.json`**: Configuración completa de rutas y builds
+  - Rutas para API serverless
+  - Rutas para archivos estáticos
+  - Configuración de CORS
+  - Timeouts extendidos para scraping
 - **`api/scrape.js`**: Endpoint serverless para el scraper
 - **`web-interface/server.js`**: Servidor Express para la interfaz web
+
+### Rutas Disponibles
+
+Una vez desplegado, tendrás acceso a:
+
+- **`/`** - Página principal (interfaz de búsqueda)
+- **`/vacantes`** - Página de resultados de vacantes
+- **`/api/scrape`** - Endpoint API para scraping
+- **`/resultados.json`** - Archivo JSON con resultados
+- **`/resultados.csv`** - Archivo CSV con resultados
+- **`/resultados.xlsx`** - Archivo Excel con resultados
+- **`/resultados.pdf`** - Archivo PDF con resultados
 
 ### Uso
 
@@ -62,6 +79,7 @@ Una vez desplegado, puedes:
 1. Acceder a la interfaz web en la URL de Vercel
 2. Usar el endpoint API directamente: `https://tu-proyecto.vercel.app/api/scrape`
 3. Integrar el scraper en otras aplicaciones
+4. Acceder a los archivos de resultados generados
 
 ### Notas Importantes
 
@@ -69,6 +87,8 @@ Una vez desplegado, puedes:
 - Los archivos se generan solo en desarrollo local (no en Vercel)
 - El proyecto está limitado a 5 páginas por búsqueda para evitar timeouts
 - Se requiere Node.js 18+ para el despliegue
+- CORS está configurado para permitir requests externos
+- Timeouts extendidos (60s) para funciones de scraping
 
 ### Desarrollo Local
 
@@ -85,3 +105,15 @@ npm run dev
 - Si hay problemas con Puppeteer en Vercel, revisa los logs en el dashboard
 - Asegúrate de que todas las dependencias estén en `package.json`
 - Verifica que la versión de Node.js sea compatible (18+)
+- Si hay problemas de CORS, verifica la configuración en `vercel.json`
+- Para problemas de rutas, revisa la configuración de `routes` en `vercel.json`
+
+### Configuración Avanzada
+
+El proyecto incluye configuraciones avanzadas para Vercel:
+
+- **Headers personalizados** para CORS
+- **Rewrites** para URLs limpias
+- **Clean URLs** habilitadas
+- **Timeouts extendidos** para funciones serverless
+- **Manejo de archivos estáticos** optimizado

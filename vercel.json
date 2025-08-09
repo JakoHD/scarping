@@ -8,12 +8,44 @@
     {
       "src": "web-interface/server.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "web-interface/**/*",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
       "dest": "/api/$1"
+    },
+    {
+      "src": "/vacantes",
+      "dest": "/web-interface/vacantes.html"
+    },
+    {
+      "src": "/vacantes.html",
+      "dest": "/web-interface/vacantes.html"
+    },
+    {
+      "src": "/img/(.*)",
+      "dest": "/web-interface/img/$1"
+    },
+    {
+      "src": "/resultados.json",
+      "dest": "/web-interface/resultados.json"
+    },
+    {
+      "src": "/resultados.csv",
+      "dest": "/web-interface/resultados.csv"
+    },
+    {
+      "src": "/resultados.xlsx",
+      "dest": "/web-interface/resultados.xlsx"
+    },
+    {
+      "src": "/resultados.pdf",
+      "dest": "/web-interface/resultados.pdf"
     },
     {
       "src": "/",
@@ -35,5 +67,35 @@
   },
   "env": {
     "NODE_ENV": "production"
-  }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/vacantes",
+      "destination": "/web-interface/vacantes.html"
+    },
+    {
+      "source": "/vacantes.html",
+      "destination": "/web-interface/vacantes.html"
+    }
+  ],
+  "cleanUrls": true
 }
