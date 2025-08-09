@@ -5,6 +5,9 @@
   <meta charset="UTF-8">
   <title>Vacantes destacadas</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 
 <body class="bg-gray-100 min-h-screen">
@@ -21,28 +24,88 @@
         <button onclick="render('todas')" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded shadow">Todas</button>
         <button onclick="render('mayor')" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded shadow">Mayor sueldo</button>
         <button onclick="render('menor')" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded shadow">Menor sueldo</button>
+        <button onclick="showMapaCercaDeTi()" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded shadow">Cerca de ti</button>
+        <button onclick="render('equipo')" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded shadow">Equipo</button>
+      </div>
+
+      <!-- Controles de descarga, solo visibles en la pestaña 'todas' -->
+      <div id="downloadButtons" class="flex gap-4 mb-4 items-center" style="display:none;">
+        <!-- Menú desplegable de descarga alineado con el primer card -->
+        <div class="relative ml-12" id="descargarDropdownWrapper" style="padding-left: 3.5rem;">
+          <button id="descargarDropdownBtn" onclick="toggleDescargarDropdown(event)" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow flex items-center gap-2" type="button">
+            <i class="bi bi-download"></i> Descargar <i class="bi bi-caret-down-fill ml-1"></i>
+          </button>
+          <div id="descargarDropdown" class="absolute left-0 mt-2 flex flex-col gap-2 bg-white rounded-lg shadow-lg p-2 z-20 min-w-[160px]" style="display:none;">
+            <a href="/resultados.json" download class="flex items-center gap-2 px-4 py-2 rounded hover:bg-cyan-100 text-cyan-700 font-semibold" title="Descargar JSON"><i class="bi bi-filetype-json"></i> JSON</a>
+            <a href="/resultados.csv" download class="flex items-center gap-2 px-4 py-2 rounded hover:bg-cyan-100 text-cyan-700 font-semibold" title="Descargar CSV"><i class="bi bi-filetype-csv"></i> CSV</a>
+            <a href="/resultados.xlsx" download class="flex items-center gap-2 px-4 py-2 rounded hover:bg-cyan-100 text-cyan-700 font-semibold" title="Descargar Excel"><i class="bi bi-file-earmark-excel-fill"></i> Excel</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controles del mapa -->
+      <div id="mapControls" class="hidden mb-4 flex flex-col items-center gap-4">
+        <div class="flex items-center justify-between gap-4 w-full max-w-md">
+          <div id="radiusControls" class="flex items-center gap-4 flex-1">
+            <label class="text-sm font-medium text-gray-700 whitespace-nowrap">Radio de búsqueda:</label>
+            <div class="flex-1 flex items-center gap-2">
+              <input 
+                type="range" 
+                id="radiusInput" 
+                value="200" 
+                min="1" 
+                max="1000" 
+                class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                oninput="updateRadius()"
+              >
+              <span id="radiusValue" class="text-sm font-bold text-cyan-600 min-w-[3rem] text-center">200 km</span>
+            </div>
+          </div>
+          <button id="radiusToggle" onclick="toggleRadius()" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded shadow text-sm whitespace-nowrap">
+            Activado
+          </button>
+        </div>
+        <div class="text-sm text-gray-600">
+          <span id="jobsCount">0</span> vacantes encontradas
+          <span id="filterStatus" class="text-cyan-600 font-medium"></span>
+        </div>
       </div>
 
       <!-- Contenido dinámico -->
       <div id="vacantesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-8"></div>
+      <div id="equipoContainer" style="display:none;"></div>
+      <div id="mapContainer" style="display:none; width:100%; height:500px; margin-top:2rem;"></div>
     </div>
   </div>
 
   <script>
     let todasVacantes = [];
-
+    let radiusFilterActive = true;
+    let currentRadius = 200;
+    let currentMap = null;
+    let userLat = null;
+    let userLng = null;
+    let allGeocodedVacantes = [];
+  
     async function getVacantes() {
       const res = await fetch('/resultados.json');
       const data = await res.json();
       return data.filter(v => v.sueldo && parseFloat(v.sueldo.replace(/[^\d.]/g, '')) > 0);
     }
 
+    // NUEVA FUNCIÓN: Obtener TODAS las vacantes sin filtros
+    async function getTodasVacantes() {
+      const res = await fetch('/resultados.json');
+      const data = await res.json();
+      return data; // TODAS las vacantes sin ningún filtro
+    }
+  
     function parseSueldo(sueldo) {
       if (!sueldo) return 0;
       const match = sueldo.replace(/,/g, '').match(/\d+/);
       return match ? parseInt(match[0], 10) : 0;
     }
-
+  
     function createCard(v) {
       return `<div class="bg-white rounded-lg shadow p-5 w-full max-w-xs mx-auto flex flex-col gap-2 border border-cyan-100">
         <div class="font-bold text-lg">${v.nombreVacante || 'Sin título'}</div>
@@ -52,41 +115,69 @@
         <div class="text-cyan-700 font-bold text-lg mt-1">${v.sueldo}</div>
       </div>`;
     }
-
+  
     async function render(filtro = 'todas') {
+      document.getElementById('mapContainer').style.display = 'none';
+      document.getElementById('mapControls').classList.add('hidden');
+      document.getElementById('vacantesContainer').style.display = 'grid';
+      document.getElementById('equipoContainer').style.display = 'none';
       const contenedor = document.getElementById('vacantesContainer');
-
+      // Refuerza la lógica para mostrar/ocultar los botones de descarga solo en la pestaña 'todas'
+      const downloadDiv = document.getElementById('downloadButtons');
+      if (downloadDiv) {
+        if (filtro === 'todas') {
+          downloadDiv.style.display = 'flex';
+        } else {
+          downloadDiv.style.display = 'none';
+        }
+      }
+      if (filtro === 'equipo') {
+        document.getElementById('vacantesContainer').style.display = 'none';
+        document.getElementById('equipoContainer').style.display = 'grid';
+        renderEquipo();
+        return;
+      }
+  
       if (todasVacantes.length === 0) {
         todasVacantes = await getVacantes();
       }
-
+  
       if (!todasVacantes.length) {
-        contenedor.innerHTML = '<div class="text-gray-500">No hay vacantes con sueldo.</div>';
+        contenedor.innerHTML = '<div class="text-gray-500">No hay vacantes disponibles.</div>';
         return;
       }
-
-      let vacantes = [...todasVacantes];
-      vacantes.sort((a, b) => parseSueldo(b.sueldo) - parseSueldo(a.sueldo));
-
-      const n = getCantidad(vacantes.length);
-
-      if (filtro === 'mayor') {
-        vacantes = vacantes.slice(0, n);
-      } else if (filtro === 'menor') {
-        vacantes = vacantes.reverse().slice(0, n);
+  
+      let vacantes = [];
+      
+      if (filtro === 'todas') {
+        // Para 'todas' mostrar todas las vacantes sin filtrar por sueldo
+        const res = await fetch('/resultados.json');
+        const allData = await res.json();
+        vacantes = allData; // Todas las vacantes sin filtrar
+      } else {
+        // Para otros filtros usar las vacantes con sueldo
+        vacantes = [...todasVacantes];
+        vacantes.sort((a, b) => parseSueldo(b.sueldo) - parseSueldo(a.sueldo));
+        
+        const n = getCantidad(vacantes.length);
+        
+        if (filtro === 'mayor') {
+          vacantes = vacantes.slice(0, n);
+        } else if (filtro === 'menor') {
+          vacantes = vacantes.reverse().slice(0, n);
+        }
       }
-
+  
       contenedor.innerHTML = vacantes.map(createCard).join('');
     }
-
+  
     function getCantidad(total) {
       if (total > 30) return 10;
       if (total >= 20) return 8;
       if (total >= 10) return 5;
       return Math.min(3, Math.floor(total / 2));
     }
-
-    // Estilos botones filtros
+  
     const style = document.createElement('style');
     style.innerHTML = `
       .tag-button {
@@ -95,15 +186,596 @@
       .tag-button:hover {
         @apply opacity-90;
       }
+      
+      /* Estilos personalizados para el slider */
+      .slider::-webkit-slider-thumb {
+        appearance: none;
+        height: 20px;
+        width: 20px;
+        border-radius: 50%;
+        background: #0891b2;
+        cursor: pointer;
+        border: 2px solid #ffffff;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      }
+      
+      .slider::-moz-range-thumb {
+        height: 20px;
+        width: 20px;
+        border-radius: 50%;
+        background: #0891b2;
+        cursor: pointer;
+        border: 2px solid #ffffff;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      }
+      
+      .slider::-webkit-slider-track {
+        background: linear-gradient(to right, #0891b2 0%, #0891b2 20%, #e5e7eb 20%, #e5e7eb 100%);
+        border-radius: 10px;
+        height: 8px;
+      }
+      
+      .slider::-moz-range-track {
+        background: linear-gradient(to right, #0891b2 0%, #0891b2 20%, #e5e7eb 20%, #e5e7eb 100%);
+        border-radius: 10px;
+        height: 8px;
+        border: none;
+      }
+      
+      /* Estilos para slider deshabilitado */
+      .slider:disabled::-webkit-slider-thumb {
+        background: #9ca3af;
+        cursor: not-allowed;
+      }
+      
+      .slider:disabled::-moz-range-thumb {
+        background: #9ca3af;
+        cursor: not-allowed;
+      }
+      
+      .slider:disabled::-webkit-slider-track {
+        background: linear-gradient(to right, #9ca3af 0%, #9ca3af 20%, #e5e7eb 20%, #e5e7eb 100%);
+      }
+      
+      .slider:disabled::-moz-range-track {
+        background: linear-gradient(to right, #9ca3af 0%, #9ca3af 20%, #e5e7eb 20%, #e5e7eb 100%);
+      }
     `;
     document.head.appendChild(style);
-
-    render(); // por defecto muestra todas
+  
+    render();
+  
     function goBack() {
       window.location.href = 'index.html';
-      setTimeout(() => location.reload(), 200); // recarga la página del buscador
+      setTimeout(() => location.reload(), 200);
+    }
+
+    function updateRadius() {
+      const radiusInput = document.getElementById('radiusInput');
+      const radiusValue = document.getElementById('radiusValue');
+      const newRadius = parseInt(radiusInput.value);
+      
+      if (newRadius >= 1 && newRadius <= 1000) {
+        currentRadius = newRadius;
+        radiusValue.textContent = `${newRadius} km`;
+        updateMapMarkers();
+      }
+    }
+
+    function toggleRadius() {
+      radiusFilterActive = !radiusFilterActive;
+      const toggleBtn = document.getElementById('radiusToggle');
+      const radiusControls = document.getElementById('radiusControls');
+      const radiusInput = document.getElementById('radiusInput');
+      const radiusValue = document.getElementById('radiusValue');
+      
+      if (radiusFilterActive) {
+        toggleBtn.textContent = 'Activado';
+        toggleBtn.className = 'px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded shadow text-sm';
+        radiusControls.classList.remove('hidden');
+        radiusInput.disabled = false;
+        radiusInput.classList.remove('opacity-50', 'cursor-not-allowed');
+        radiusInput.classList.add('cursor-pointer');
+        radiusValue.textContent = `${currentRadius} km`;
+        radiusValue.classList.remove('text-gray-400');
+        radiusValue.classList.add('text-cyan-600');
+      } else {
+        toggleBtn.textContent = 'Desactivado';
+        toggleBtn.className = 'px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded shadow text-sm';
+        radiusControls.classList.remove('hidden');
+        radiusInput.disabled = true;
+        radiusInput.classList.add('opacity-50', 'cursor-not-allowed');
+        radiusInput.classList.remove('cursor-pointer');
+        radiusValue.textContent = `${currentRadius} km`;
+        radiusValue.classList.add('text-gray-400');
+        radiusValue.classList.remove('text-cyan-600');
+      }
+      
+      updateMapMarkers();
+    }
+
+    function updateMapMarkers() {
+      if (!currentMap || !userLat || !userLng) return;
+      
+      // Limpiar marcadores y círculos existentes
+      currentMap.eachLayer((layer) => {
+        if (layer instanceof L.Marker || layer instanceof L.Circle) {
+          currentMap.removeLayer(layer);
+        }
+      });
+      
+      // Agregar marcador del usuario
+      const redIcon = new L.Icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41]
+      });
+      
+      L.marker([userLat, userLng], { icon: redIcon }).addTo(currentMap)
+        .bindPopup('Tú estás aquí').openPopup();
+      
+      // Agregar círculo de radio solo si está activado
+      if (radiusFilterActive) {
+        L.circle([userLat, userLng], {
+          color: 'red',
+          fillColor: '#f03',
+          fillOpacity: 0.1,
+          radius: currentRadius * 1000 // Convertir km a metros
+        }).addTo(currentMap);
+      }
+      
+      // Filtrar y agregar marcadores de vacantes
+      let vacantesAMostrar = allGeocodedVacantes;
+      // Solo filtrar por radio si está ACTIVADO, si está DESACTIVADO mostrar TODAS
+      if (radiusFilterActive) {
+        vacantesAMostrar = allGeocodedVacantes.filter(v => v.dist <= currentRadius);
+        console.log(`Filtro ACTIVADO: Mostrando ${vacantesAMostrar.length} vacantes dentro de ${currentRadius}km de ${allGeocodedVacantes.length} totales`);
+      } else {
+        // Si está DESACTIVADO, mostrar TODAS las vacantes sin filtrar
+        vacantesAMostrar = allGeocodedVacantes;
+        console.log(`Filtro DESACTIVADO: Mostrando TODAS las ${vacantesAMostrar.length} vacantes de la República Mexicana`);
+        console.log(`✅ GARANTIZADO: Todas las vacantes serán mostradas en el mapa`);
+      }
+      
+      // Verificación adicional para asegurar que se muestren todas
+      if (!radiusFilterActive && vacantesAMostrar.length !== allGeocodedVacantes.length) {
+        console.error(`❌ ERROR: No se están mostrando todas las vacantes. Esperadas: ${allGeocodedVacantes.length}, Mostradas: ${vacantesAMostrar.length}`);
+        vacantesAMostrar = allGeocodedVacantes; // Forzar mostrar todas
+        console.log(`🔧 CORREGIDO: Ahora mostrando ${vacantesAMostrar.length} vacantes`);
+      }
+      
+      // Separar vacantes repetidas antes de agregarlas
+      const distanciaSeparacion = radiusFilterActive ? 7 : 8;
+      const vacantesSeparadas = separarMarcadores(vacantesAMostrar, distanciaSeparacion);
+      
+      const blueIcon = new L.Icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41]
+      });
+      
+      if (vacantesSeparadas.length > 0) {
+        vacantesSeparadas.forEach(v => {
+          const popup = `
+            <div style="max-width: 300px;">
+              <h3 style="font-weight: bold; margin-bottom: 8px; color: #0891b2;">${v.nombreVacante || 'Sin título'}</h3>
+              <p style="margin: 4px 0;"><strong>🏢 Empresa:</strong> ${v.empresa || 'No se muestra la empresa'}</p>
+              <p style="margin: 4px 0;"><strong>📍 Ubicación:</strong> ${v.ubicacion || 'Sin ubicación'}</p>
+              <p style="margin: 4px 0;"><strong>💰 Sueldo:</strong> ${v.sueldo || ''}</p>
+              <p style="margin: 4px 0;"><strong>🏠 Modalidad:</strong> ${v.detalles?.['Espacio de trabajo'] || ''}</p>
+              ${v.dist ? `<p style="margin: 4px 0; color: #666;"><strong>📏 Distancia:</strong> ${Math.round(v.dist)}km</p>` : ''}
+              ${v.searchTerm ? `<p style="margin: 4px 0; color: #888; font-size: 11px;"><strong>🔍 Búsqueda:</strong> "${v.searchTerm}"</p>` : ''}
+            </div>
+          `;
+          L.marker([v.lat, v.lng], { icon: blueIcon }).addTo(currentMap)
+            .bindPopup(popup);
+        });
+      }
+      
+      // Actualizar contador
+      document.getElementById('jobsCount').textContent = vacantesAMostrar.length;
+      
+      // Actualizar estado del filtro en el contador
+      const filterStatus = document.getElementById('filterStatus');
+      if (radiusFilterActive) {
+        filterStatus.textContent = `(dentro de ${currentRadius}km)`;
+      } else {
+        filterStatus.textContent = `(TODAS las vacantes de la República Mexicana)`;
+      }
+    }
+  
+    // === NUEVO: Separación de marcadores ===
+    function separarMarcadores(vacantes, distanciaKm = 0.5) {
+      const ubicacionesMap = {};
+      vacantes.forEach(v => {
+        const key = `${v.lat.toFixed(5)}-${v.lng.toFixed(5)}`;
+        if (!ubicacionesMap[key]) ubicacionesMap[key] = [];
+        ubicacionesMap[key].push(v);
+      });
+  
+      const resultado = [];
+      for (const key in ubicacionesMap) {
+        const grupo = ubicacionesMap[key];
+        if (grupo.length === 1) {
+          resultado.push(grupo[0]);
+        } else {
+          const anguloIncremental = 360 / grupo.length;
+          grupo.forEach((v, i) => {
+            const angulo = anguloIncremental * i;
+            const desplazado = aplicarDesplazamiento(v.lat, v.lng, distanciaKm, angulo);
+            resultado.push({ ...v, lat: desplazado.lat, lng: desplazado.lng });
+          });
+        }
+      }
+  
+      return resultado;
+    }
+  
+    function aplicarDesplazamiento(lat, lng, distanciaKm, anguloGrados) {
+      const R = 6371;
+      const anguloRad = anguloGrados * Math.PI / 180;
+  
+      const deltaLat = (distanciaKm / R) * Math.cos(anguloRad);
+      const deltaLng = (distanciaKm / (R * Math.cos(lat * Math.PI / 180))) * Math.sin(anguloRad);
+  
+      return {
+        lat: lat + deltaLat * (180 / Math.PI),
+        lng: lng + deltaLng * (180 / Math.PI)
+      };
+    }
+  
+    // === OPENSTREETMAP DETALLADO + VACANTES CERCANAS ===
+    async function showMapaCercaDeTi() {
+      document.getElementById('vacantesContainer').style.display = 'none';
+      document.getElementById('mapControls').classList.remove('hidden');
+      let mapDiv = document.getElementById('mapContainer');
+      mapDiv.style.display = 'block';
+      mapDiv.innerHTML = '<div class="text-gray-500">Obteniendo tu ubicación...</div>';
+  
+      if (!navigator.geolocation) {
+        mapDiv.innerHTML = '<div class="text-red-500">Tu navegador no soporta geolocalización.</div>';
+        return;
+      }
+  
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        userLat = pos.coords.latitude;
+        userLng = pos.coords.longitude;
+  
+        allGeocodedVacantes = [];
+        
+        // Coordenadas por defecto para México (centro aproximado)
+        const defaultLat = 23.6345;
+        const defaultLng = -102.5528;
+        
+        // OBTENER TODAS LAS VACANTES SIN FILTROS
+        const todasVacantesCompletas = await getTodasVacantes();
+        console.log(`📊 TOTAL DE VACANTES ENCONTRADAS: ${todasVacantesCompletas.length}`);
+        
+        console.log(`Procesando ${todasVacantesCompletas.length} vacantes...`);
+        
+        // Procesar todas las vacantes
+        for (const v of todasVacantesCompletas) {
+          try {
+            console.log(`Procesando vacante: ${v.nombreVacante} - Ubicación: "${v.ubicacion}"`);
+            
+            if (v.ubicacion && v.ubicacion.trim() !== '') {
+              // Limpiar la ubicación para mejor geocodificación
+              let ubicacionLimpia = v.ubicacion.trim();
+              // Remover comas dobles y espacios extra
+              ubicacionLimpia = ubicacionLimpia.replace(/,,/g, ',').replace(/\s+/g, ' ');
+              
+              // Expandir abreviaciones de estados
+              let ubicacionExpandida = expandirAbreviaciones(ubicacionLimpia);
+              console.log(`Ubicación original: "${ubicacionLimpia}"`);
+              console.log(`Ubicación expandida: "${ubicacionExpandida}"`);
+              
+              console.log(`Geocodificando: "${ubicacionExpandida}"`);
+              
+              // Crear múltiples variaciones de búsqueda para ser más inclusivo
+              const searchVariations = [
+                ubicacionExpandida + ', México',
+                ubicacionExpandida.replace(/[áéíóúÁÉÍÓÚ]/g, (match) => {
+                  const accents = { 'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'Á': 'A', 'É': 'E', 'Í': 'I', 'Ó': 'O', 'Ú': 'U' };
+                  return accents[match];
+                }) + ', México',
+                ubicacionExpandida.replace(/[áéíóúÁÉÍÓÚ]/g, (match) => {
+                  const accents = { 'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'Á': 'A', 'É': 'E', 'Í': 'I', 'Ó': 'O', 'Ú': 'U' };
+                  return accents[match];
+                }),
+                ubicacionExpandida,
+                ubicacionExpandida.split(',')[0] + ', México', // Solo la primera parte
+                ubicacionExpandida.split(',')[0], // Solo la primera parte sin México
+                ubicacionExpandida.replace('de Juárez', '') + ', México',
+                ubicacionExpandida.replace('de Juárez', ''),
+                ubicacionExpandida.replace('de Juárez', '').replace(/[áéíóúÁÉÍÓÚ]/g, (match) => {
+                  const accents = { 'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'Á': 'A', 'É': 'E', 'Í': 'I', 'Ó': 'O', 'Ú': 'U' };
+                  return accents[match];
+                }) + ', México',
+                // También intentar con la ubicación original (sin expandir)
+                ubicacionLimpia + ', México',
+                ubicacionLimpia
+              ];
+              
+              // Eliminar duplicados
+              const uniqueSearchTerms = [...new Set(searchVariations)];
+              
+              let found = false;
+              let bestResult = null;
+              
+              // Intentar todas las variaciones de búsqueda
+              for (const searchTerm of uniqueSearchTerms) {
+                try {
+                  console.log(`Intentando búsqueda: "${searchTerm}"`);
+                  
+                  // Usar el endpoint /geocode del backend para geocodificar
+                  const url = `/geocode?q=${encodeURIComponent(searchTerm)}`;
+                  const res = await fetch(url);
+                  const data = await res.json();
+                  
+                  if (data && data.length > 0) {
+                    const lat = parseFloat(data[0].lat);
+                    const lng = parseFloat(data[0].lon);
+                    
+                    // Verificar que las coordenadas sean válidas
+                    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                      const R = 6371;
+                      const dLat = (lat - userLat) * Math.PI / 180;
+                      const dLon = (lng - userLng) * Math.PI / 180;
+                      const a = Math.sin(dLat / 2) ** 2 +
+                                Math.cos(userLat * Math.PI / 180) * Math.cos(lat * Math.PI / 180) *
+                                Math.sin(dLon / 2) ** 2;
+                      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                      const dist = R * c;
+                      
+                      bestResult = { ...v, lat, lng, dist, searchTerm };
+                      console.log(`✅ Geocodificado exitosamente: ${v.nombreVacante} en (${lat}, ${lng}) usando: "${searchTerm}"`);
+                      found = true;
+                      break;
+                    }
+                  }
+                } catch (error) {
+                  console.log(`Error en búsqueda: "${searchTerm}"`, error);
+                }
+              }
+              
+              if (found && bestResult) {
+                allGeocodedVacantes.push(bestResult);
+              } else {
+                // Si no se puede geocodificar, usar ubicación por defecto pero mantener la vacante
+                console.log(`❌ No se pudo geocodificar: ${v.nombreVacante}, usando ubicación por defecto`);
+                const R = 6371;
+                const dLat = (defaultLat - userLat) * Math.PI / 180;
+                const dLon = (defaultLng - userLng) * Math.PI / 180;
+                const a = Math.sin(dLat / 2) ** 2 +
+                          Math.cos(userLat * Math.PI / 180) * Math.cos(defaultLat * Math.PI / 180) *
+                          Math.sin(dLon / 2) ** 2;
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                const dist = R * c;
+                allGeocodedVacantes.push({ ...v, lat: defaultLat, lng: defaultLng, dist, searchTerm: 'ubicación por defecto' });
+              }
+            } else {
+              // Para vacantes sin ubicación, usar ubicación por defecto
+              console.log(`📍 Sin ubicación, usando ubicación por defecto: ${v.nombreVacante}`);
+              const R = 6371;
+              const dLat = (defaultLat - userLat) * Math.PI / 180;
+              const dLon = (defaultLng - userLng) * Math.PI / 180;
+              const a = Math.sin(dLat / 2) ** 2 +
+                        Math.cos(userLat * Math.PI / 180) * Math.cos(defaultLat * Math.PI / 180) *
+                        Math.sin(dLon / 2) ** 2;
+              const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+              const dist = R * c;
+              allGeocodedVacantes.push({ ...v, lat: defaultLat, lng: defaultLng, dist });
+            }
+          } catch (error) {
+            // Si hay error, usar ubicación por defecto
+            console.log(`❌ Error procesando: ${v.nombreVacante}`, error);
+            const R = 6371;
+            const dLat = (defaultLat - userLat) * Math.PI / 180;
+            const dLon = (defaultLng - userLng) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) ** 2 +
+                      Math.cos(userLat * Math.PI / 180) * Math.cos(defaultLat * Math.PI / 180) *
+                      Math.sin(dLon / 2) ** 2;
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const dist = R * c;
+            allGeocodedVacantes.push({ ...v, lat: defaultLat, lng: defaultLng, dist });
+          }
+        }
+        
+        console.log(`Total de vacantes procesadas: ${allGeocodedVacantes.length}`);
+        
+        // Verificación final: asegurar que TODAS las vacantes estén incluidas
+        if (allGeocodedVacantes.length !== todasVacantesCompletas.length) {
+          console.warn(`⚠️ ADVERTENCIA: Solo ${allGeocodedVacantes.length} de ${todasVacantesCompletas.length} vacantes fueron geocodificadas`);
+          console.log(`🔧 Agregando vacantes faltantes con ubicación por defecto...`);
+          
+          // Encontrar vacantes que no están en allGeocodedVacantes
+          const vacantesFaltantes = todasVacantesCompletas.filter(v => 
+            !allGeocodedVacantes.some(gv => gv.nombreVacante === v.nombreVacante)
+          );
+          
+          vacantesFaltantes.forEach(v => {
+            console.log(`➕ Agregando vacante faltante: ${v.nombreVacante}`);
+            const R = 6371;
+            const dLat = (defaultLat - userLat) * Math.PI / 180;
+            const dLon = (defaultLng - userLng) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) ** 2 +
+                      Math.cos(userLat * Math.PI / 180) * Math.cos(defaultLat * Math.PI / 180) *
+                      Math.sin(dLon / 2) ** 2;
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const dist = R * c;
+            allGeocodedVacantes.push({ ...v, lat: defaultLat, lng: defaultLng, dist, searchTerm: 'ubicación por defecto (faltante)' });
+          });
+          
+          console.log(`✅ Ahora tenemos ${allGeocodedVacantes.length} vacantes (TODAS incluidas)`);
+        } else {
+          console.log(`✅ PERFECTO: Todas las ${allGeocodedVacantes.length} vacantes fueron procesadas correctamente`);
+        }
+  
+        mapDiv.innerHTML = '<div id="map" style="width:100%;height:500px;"></div>';
+        
+        // Crear mapa con mejor información de lugares específicos como Oaxaca de Juárez
+        currentMap = L.map('map').setView([userLat, userLng], 10);
+        
+        // Mapa con información detallada de lugares específicos
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 19
+        }).addTo(currentMap);
+        
+        // Capa adicional con etiquetas de lugares más visibles
+        L.tileLayer('https://tiles.wmflabs.org/osm/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 19,
+          opacity: 0.8
+        }).addTo(currentMap);
+  
+        // Actualizar marcadores con el filtro actual
+        updateMapMarkers();
+        
+        if (allGeocodedVacantes.length === 0) {
+          L.popup()
+            .setLatLng([userLat, userLng])
+            .setContent('No se encontraron vacantes.')
+            .openOn(currentMap);
+        }
+      }, () => {
+        mapDiv.innerHTML = '<div class="text-red-500">No se pudo obtener tu ubicación.</div>';
+      });
+    }
+
+    // === MAPEO DE ABREVIACIONES DE ESTADOS DE MÉXICO ===
+    const abreviacionesEstados = {
+      'Ags.': 'Aguascalientes',
+      'BC': 'Baja California',
+      'BCS': 'Baja California Sur',
+      'Camp.': 'Campeche',
+      'Chis.': 'Chiapas',
+      'Chih.': 'Chihuahua',
+      'CDMX': 'Ciudad de México',
+      'Coah.': 'Coahuila',
+      'Col.': 'Colima',
+      'Dgo.': 'Durango',
+      'Gto.': 'Guanajuato',
+      'Gro.': 'Guerrero',
+      'Hgo.': 'Hidalgo',
+      'Jal.': 'Jalisco',
+      'Mex.': 'Estado de México',
+      'Mich.': 'Michoacán',
+      'Mor.': 'Morelos',
+      'Nay.': 'Nayarit',
+      'NL': 'Nuevo León',
+      'Oax.': 'Oaxaca',
+      'Pue.': 'Puebla',
+      'Qro.': 'Querétaro',
+      'Q. Roo': 'Quintana Roo',
+      'SLP': 'San Luis Potosí',
+      'Sin.': 'Sinaloa',
+      'Son.': 'Sonora',
+      'Tab.': 'Tabasco',
+      'Tamps.': 'Tamaulipas',
+      'Tlax.': 'Tlaxcala',
+      'Ver.': 'Veracruz',
+      'Yuc.': 'Yucatán',
+      'Zac.': 'Zacatecas'
+    };
+
+    function expandirAbreviaciones(ubicacion) {
+      let ubicacionExpandida = ubicacion;
+      
+      // Buscar y reemplazar abreviaciones de estados
+      for (const [abrev, nombreCompleto] of Object.entries(abreviacionesEstados)) {
+        const regex = new RegExp(`\\b${abrev.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+        ubicacionExpandida = ubicacionExpandida.replace(regex, nombreCompleto);
+      }
+      
+      return ubicacionExpandida;
+    }
+
+    // Renderizar equipo
+    function renderEquipo() {
+      const equipo = [
+        {
+          nombre: 'Alexander G. Rangel',
+          puesto: 'Ing. Desarrollo y Gestión de Software',
+          email: 'rahulsharma@gfg.com',
+          ubicacion: 'Hidalgo, Mex',
+          img: './img/189170048.png',
+          linkedin: 'https://www.linkedin.com/in/alexander-garcia-rangel-3946ba253?trk=contact-info ',
+          github: 'https://github.com/AlexanderGarcia27'
+        },
+        {
+          nombre: 'Luis Abel R. Ramirez',
+          puesto: 'Ing. Desarrollo y Gestión de Software',
+          email: 'priyanka.gupta@gfg.com',
+          ubicacion: 'Hidalgo, Mex',
+          img: './img/146997726.png',
+          linkedin: 'https://mx.linkedin.com/in/luis-abel-rangel-ramirez-9b66562b8',
+          github: 'https://github.com/Luis20Abel20'
+        },
+        {
+          nombre: 'Alan I. García',
+          puesto: 'Ing. Desarrollo y Gestión de Software',
+          email: 'kaj065vwv@gmail.com',
+          ubicacion: 'Hidalgo, Mex',
+          img: './img/160685724.png',
+          linkedin: 'https://mx.linkedin.com/in/alan-isidro-garcia-967a482b7?trk=people-guest_people_search-card&original_referer=https%3A%2F%2Fwww.linkedin.com%2F',
+          github: 'https://github.com/JakoHD'
+        }
+      ];
+      document.getElementById('equipoContainer').innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 justify-items-center">
+          ${equipo.map(m => `
+            <div class="bg-white rounded-lg shadow p-6 w-full max-w-xs flex flex-col items-center border border-cyan-100">
+              <img src="${m.img}" alt="${m.nombre}" class="w-24 h-24 rounded-full mb-4 shadow">
+              <div class="font-bold text-xl mb-1">${m.nombre}</div>
+              <div class="text-gray-500 mb-2">${m.puesto}</div>
+              <div class="flex flex-col gap-1 mb-2 w-full">
+                <div class="text-gray-700 text-sm flex items-center"><i class='bi bi-envelope-fill text-cyan-600 mr-2'></i>${m.email}</div>
+                <div class="text-gray-700 text-sm flex items-center"><i class='bi bi-geo-alt-fill text-cyan-600 mr-2'></i>${m.ubicacion}</div>
+              </div>
+              <div class="flex gap-4 mt-2">
+                <a href="${m.linkedin}" target="_blank" class="text-blue-700"><svg class="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.761 0 5-2.239 5-5v-14c0-2.761-2.239-5-5-5zm-11 19h-3v-10h3v10zm-1.5-11.268c-.966 0-1.75-.784-1.75-1.75s.784-1.75 1.75-1.75 1.75.784 1.75 1.75-.784 1.75-1.75 1.75zm13.5 11.268h-3v-5.604c0-1.337-.025-3.063-1.868-3.063-1.868 0-2.154 1.459-2.154 2.968v5.699h-3v-10h2.881v1.367h.041c.401-.761 1.381-1.563 2.841-1.563 3.039 0 3.6 2.001 3.6 4.601v5.595z"/></svg></a>
+                <a href="${m.github}" target="_blank" class="text-gray-800"><svg class="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.387.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.415-4.042-1.415-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.084-.729.084-.729 1.205.084 1.84 1.236 1.84 1.236 1.07 1.834 2.809 1.304 3.495.997.108-.775.418-1.305.762-1.605-2.665-.305-5.466-1.334-5.466-5.931 0-1.31.469-2.381 1.236-3.221-.124-.303-.535-1.523.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.553 3.297-1.23 3.297-1.23.653 1.653.242 2.873.119 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.803 5.624-5.475 5.921.43.371.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12z"/></svg></a>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // Lógica para mostrar/ocultar el menú de descarga
+    function toggleDescargarDropdown(event) {
+      event.stopPropagation();
+      const dropdown = document.getElementById('descargarDropdown');
+      if (dropdown.style.display === 'none' || dropdown.style.display === '') {
+        dropdown.style.display = 'flex';
+        setTimeout(() => {
+          document.addEventListener('click', closeDescargarDropdownOnClickOutside);
+        }, 0);
+      } else {
+        dropdown.style.display = 'none';
+        document.removeEventListener('click', closeDescargarDropdownOnClickOutside);
+      }
+    }
+    function closeDescargarDropdownOnClickOutside(e) {
+      const wrapper = document.getElementById('descargarDropdownWrapper');
+      if (!wrapper.contains(e.target)) {
+        document.getElementById('descargarDropdown').style.display = 'none';
+        document.removeEventListener('click', closeDescargarDropdownOnClickOutside);
+      }
     }
   </script>
+
+  <footer class="w-full bg-gray-200 text-center py-4 mt-8 text-gray-600 font-medium">
+    datos obtenidos solo con fines educativos
+  </footer>
+  
 </body>
 
 </html>

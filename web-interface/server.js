@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { scrapeOCC } from '../scrape.js';
 import fs from 'fs';
+import fetch from 'node-fetch';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,6 +61,32 @@ app.get('/resultados.json', (req, res) => {
     res.status(404).send({ error: 'No hay resultados.json' });
   }
 });
+
+// Endpoint proxy para geocodificación con LocationIQ
+app.get('/geocode', async (req, res) => {
+    const { q } = req.query;
+    if (!q) {
+        return res.status(400).json({ error: 'Falta el parámetro q' });
+    }
+    // PON AQUÍ TU API KEY DE LOCATIONIQ
+    const apiKey = 'pk.8e189bb0bea1772e515ad047bed32836'; // <-- Reemplaza esto por tu API key real
+    const url = `https://us1.locationiq.com/v1/search.php?key=${apiKey}&q=${encodeURIComponent(q)}&countrycodes=mx&format=json&limit=1&addressdetails=1`;
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Scrapin-OCC/1.0 (tuemail@dominio.com)'
+            }
+        });
+        if (!response.ok) {
+            return res.status(500).json({ error: 'Error al consultar LocationIQ' });
+        }
+        const data = await response.json();
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: 'Error al buscar la ubicación' });
+    }
+});
+
 
 app.listen(PORT, () => {
     console.log(`Servidor ejecutándose en http://localhost:${PORT}`);
