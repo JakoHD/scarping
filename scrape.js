@@ -16,16 +16,69 @@ function askQuestion(query) {
 
 const OCC_URL = 'https://www.occ.com.mx/';
 
-export async function scrapeOCC(searchTerm) {
-  const browser = await puppeteer.launch({ headless: false, args: ['--start-maximized'] });
+export async function scrapeOCC(searchTerm, isVercel = false) {
+  let browser;
+  
+  if (isVercel) {
+    // Configuración especial para Vercel
+    browser = await puppeteer.launch({
+      headless: "new",
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu',
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1400,900'
+      ],
+      defaultViewport: { width: 1400, height: 900 }
+    });
+  } else {
+    // Configuración para desarrollo local
+    browser = await puppeteer.launch({
+      headless: "new",
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1400,900'
+      ],
+      defaultViewport: { width: 1400, height: 900 }
+    });
+  }
+
   const page = await browser.newPage();
-  await page.setViewport({ width: 1400, height: 900 });
-  await page.goto(OCC_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#prof-cat-search-input-desktop', { timeout: 15000 });
-  await page.type('#prof-cat-search-input-desktop', searchTerm);
+
+  // Poner un User-Agent para que parezca un navegador real
+  await page.setUserAgent(
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+  );
+
+  // Eliminar la variable que delata la automatización
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+  });
+
+  await page.goto(OCC_URL, { waitUntil: 'networkidle2' });
+
+  // Este cambio hace que espere el input de búsqueda o el input alternativo
+  await page.waitForSelector('#prof-cat-search-input-desktop, #search-input', { timeout: 20000 });
+
+  // Si existe el input de escritorio, úsalo; si no, el otro
+  if (await page.$('#prof-cat-search-input-desktop') !== null) {
+    await page.type('#prof-cat-search-input-desktop', searchTerm);
+  } else {
+    await page.type('#search-input', searchTerm);
+  }
+
   await Promise.all([
     page.click('button[type="submit"]'),
-    page.waitForSelector('div[id^="jobcard-"]', { timeout: 15000 })
+    page.waitForSelector('div[id^="jobcard-"]', { timeout: 20000 })
   ]);
 
   let results = [];
@@ -33,9 +86,12 @@ export async function scrapeOCC(searchTerm) {
   let pageNum = 1;
 
   while (hasNextPage) {
+    console.log(`📄 Procesando página ${pageNum}...`);
     try {
       await page.waitForSelector('div[id^="jobcard-"]', { timeout: 15000 });
       const jobCards = await page.$$('div[id^="jobcard-"]');
+
+      console.log(`   ➡ ${jobCards.length} vacantes encontradas en esta página.`);
 
       for (let i = 0; i < jobCards.length; i++) {
         const card = jobCards[i];
@@ -116,7 +172,6 @@ export async function scrapeOCC(searchTerm) {
             await page.keyboard.press('Escape');
             await new Promise(res => setTimeout(res, 500));
           } else {
-            console.log(`⚠️ Vacante ${i + 1} no es clickeable (boundingBox vacío).`);
             continue;
           }
         } catch (error) {
@@ -162,7 +217,6 @@ export async function scrapeOCC(searchTerm) {
           hasNextPage = false;
         }
       } else {
-        console.log('❌ No se encontró botón de siguiente.');
         hasNextPage = false;
       }
 
@@ -174,7 +228,7 @@ export async function scrapeOCC(searchTerm) {
 
   await browser.close();
 
-  // Guardar archivos
+  // Guardar JSON
   fs.writeFileSync('resultados.json', JSON.stringify(results, null, 2), 'utf-8');
   console.log(`✅ Se guardaron ${results.length} resultados en resultados.json`);
 
