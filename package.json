@@ -2,10 +2,13 @@
   "name": "scrapin-occ",
   "version": "1.0.0",
   "description": "Scraper de OCC usando Puppeteer",
-  "main": "scrape.js",
+  "main": "web-interface/server.js",
   "type": "module",
   "scripts": {
-    "start": "node scrape.js"
+    "start": "node web-interface/server.js",
+    "dev": "node web-interface/server.js",
+    "build": "echo 'No build step required'",
+    "vercel-build": "echo 'No build step required'"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -15,6 +18,10 @@
     "pdfmake": "^0.2.20",
     "puppeteer": "^21.3.8",
     "roboto-font": "^0.1.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { scrapeOCC } from '../scrape.js';
 import fs from 'fs';
 import fetch from 'node-fetch';
 
@@ -10,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -21,7 +20,7 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Endpoint para buscar
+// Endpoint para buscar - ahora usa la API de Vercel
 app.post('/search', async (req, res) => {
     try {
         const { searchTerm } = req.body;
@@ -32,23 +31,37 @@ app.post('/search', async (req, res) => {
 
         console.log(`Buscando: ${searchTerm}`);
         
-        // Llamar a la función del scraper
-        const results = await scrapeOCC(searchTerm.trim());
+        // Llamar a la API de Vercel
+        const apiUrl = process.env.VERCEL_URL 
+            ? `https://${process.env.VERCEL_URL}/api/scrape`
+            : 'http://localhost:3000/api/scrape';
+            
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ searchTerm: searchTerm.trim() })
+        });
+
+        const data = await response.json();
         
-        if (results.length === 0) {
-            return res.json({ success: false, error: 'No se encontraron vacantes' });
+        if (!data.success) {
+            return res.json({ success: false, error: data.error || 'Error al procesar la búsqueda' });
         }
 
-        console.log(`Se encontraron ${results.length} vacantes`);
+        console.log(`Se encontraron ${data.count} vacantes`);
         
         res.json({ 
             success: true, 
-            message: `Se encontraron ${results.length} vacantes y se generaron los archivos`
+            message: `Se encontraron ${data.count} vacantes`,
+            count: data.count,
+            results: data.results
         });
 
     } catch (error) {
         console.error('Error en la búsqueda:', error);
-        res.json({ success: false, error: 'Error al procesar la búsqueda' });
+        res.json({ success: false, error: 'Error al procesar la búsqueda: ' + error.message });
     }
 });
 
@@ -87,8 +100,14 @@ app.get('/geocode', async (req, res) => {
     }
 });
 
-
-app.listen(PORT, () => {
-    console.log(`Servidor ejecutándose en http://localhost:${PORT}`);
-    console.log(`Abre tu navegador y ve a: http://localhost:${PORT}`);
-}); 
+// Para Vercel, necesitamos exportar la app
+if (process.env.NODE_ENV === 'production') {
+    // Para Vercel
+    export default app;
+} else {
+    // Para desarrollo local
+    app.listen(PORT, () => {
+        console.log(`Servidor ejecutándose en http://localhost:${PORT}`);
+        console.log(`Abre tu navegador y ve a: http://localhost:${PORT}`);
+    });
+} 
