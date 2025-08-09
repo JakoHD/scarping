@@ -40,11 +40,11 @@ app.post('/search', async (req, res) => {
 
         console.log(`Buscando: ${searchTerm}`);
         
-        // Llamar a la API de Vercel
-        const apiUrl = process.env.VERCEL_URL 
-            ? `https://${process.env.VERCEL_URL}/api/scrape`
-            : 'http://localhost:3000/api/scrape';
-            
+        // Construir la URL del API con el host de la solicitud (funciona en Vercel y local)
+        const host = req.headers['x-forwarded-host'] || req.headers.host;
+        const proto = req.headers['x-forwarded-proto'] || (host?.includes('localhost') ? 'http' : 'https');
+        const apiUrl = `${proto}://${host}/api/scrape`;
+
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
@@ -52,6 +52,12 @@ app.post('/search', async (req, res) => {
             },
             body: JSON.stringify({ searchTerm: searchTerm.trim() })
         });
+
+        // Si la respuesta no es OK, devolver el texto como error para depurar
+        if (!response.ok) {
+            const text = await response.text();
+            return res.status(500).json({ success: false, error: `API respondió ${response.status}: ${text.slice(0, 300)}` });
+        }
 
         const data = await response.json();
         
