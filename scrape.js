@@ -1,9 +1,20 @@
-import puppeteer from 'puppeteer';
 import readline from 'readline';
 import fs from 'fs';
 import { Parser as Json2csvParser } from 'json2csv';
 import XLSX from 'xlsx';
 import PDFDocument from 'pdfkit';
+
+const isVercel = process.env.VERCEL === '1' || process.env.NOW_REGION;
+
+let puppeteer;
+let chromium;
+if (isVercel) {
+  // En Vercel: usar puppeteer-core + chromium-aws-lambda (@sparticuz/chromium)
+  puppeteer = await import('puppeteer-core').then(m => m.default || m);
+  chromium = await import('@sparticuz/chromium');
+} else {
+  puppeteer = await import('puppeteer').then(m => m.default || m);
+}
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -16,31 +27,21 @@ function askQuestion(query) {
 
 const OCC_URL = 'https://www.occ.com.mx/';
 
-export async function scrapeOCC(searchTerm, isVercel = false) {
+export async function scrapeOCC(searchTerm, forceVercel = false) {
+  const runOnVercel = forceVercel || isVercel;
   let browser;
-  
-  if (isVercel) {
-    // Configuración especial para Vercel
+
+  if (runOnVercel) {
+    const executablePath = await chromium.executablePath();
     browser = await puppeteer.launch({
-      headless: "new",
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu',
-        '--disable-blink-features=AutomationControlled',
-        '--window-size=1400,900'
-      ],
+      executablePath,
+      headless: true,
+      args: chromium.args,
       defaultViewport: { width: 1400, height: 900 }
     });
   } else {
-    // Configuración para desarrollo local
     browser = await puppeteer.launch({
-      headless: "new",
+      headless: 'new',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -53,23 +54,19 @@ export async function scrapeOCC(searchTerm, isVercel = false) {
 
   const page = await browser.newPage();
 
-  // Poner un User-Agent para que parezca un navegador real
   await page.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
     '(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
   );
 
-  // Eliminar la variable que delata la automatización
   await page.evaluateOnNewDocument(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => false });
   });
 
   await page.goto(OCC_URL, { waitUntil: 'networkidle2' });
 
-  // Este cambio hace que espere el input de búsqueda o el input alternativo
   await page.waitForSelector('#prof-cat-search-input-desktop, #search-input', { timeout: 20000 });
 
-  // Si existe el input de escritorio, úsalo; si no, el otro
   if (await page.$('#prof-cat-search-input-desktop') !== null) {
     await page.type('#prof-cat-search-input-desktop', searchTerm);
   } else {
@@ -105,43 +102,36 @@ export async function scrapeOCC(searchTerm, isVercel = false) {
         let detalles = {};
 
         try {
-          // Extraer nombre de la vacante
           const nombreElement = await card.$('h3, .job-title, [data-testid="job-title"]');
           if (nombreElement) {
             nombreVacante = await nombreElement.evaluate(el => el.textContent.trim());
           }
 
-          // Extraer empresa
           const empresaElement = await card.$('.company-name, [data-testid="company-name"], .employer-name');
           if (empresaElement) {
             empresa = await empresaElement.evaluate(el => el.textContent.trim());
           }
 
-          // Extraer ubicación
           const ubicacionElement = await card.$('.location, [data-testid="location"], .job-location');
           if (ubicacionElement) {
             ubicacion = await ubicacionElement.evaluate(el => el.textContent.trim());
           }
 
-          // Extraer sueldo
           const sueldoElement = await card.$('.salary, [data-testid="salary"], .job-salary');
           if (sueldoElement) {
             sueldo = await sueldoElement.evaluate(el => el.textContent.trim());
           }
 
-          // Verificar si está verificada
           const verificadaElement = await card.$('.verified, [data-testid="verified"]');
           if (verificadaElement) {
             verificada = true;
           }
 
-          // Intentar extraer descripción
           const descripcionElement = await card.$('.description, [data-testid="description"], .job-description');
           if (descripcionElement) {
             descripcion = await descripcionElement.evaluate(el => el.textContent.trim());
           }
 
-          // Extraer información adicional sobre el empleo
           const sobreEmpleoElements = await card.$$('.job-details, [data-testid="job-details"] .detail-item');
           for (const element of sobreEmpleoElements) {
             const text = await element.evaluate(el => el.textContent.trim());
@@ -151,7 +141,6 @@ export async function scrapeOCC(searchTerm, isVercel = false) {
             }
           }
 
-          // Extraer detalles adicionales
           const detallesElements = await card.$$('.job-info, [data-testid="job-info"] .info-item');
           for (const element of detallesElements) {
             const text = await element.evaluate(el => el.textContent.trim());
@@ -179,13 +168,9 @@ export async function scrapeOCC(searchTerm, isVercel = false) {
         }
       }
 
-      // Verificar si hay siguiente página
       const nextButton = await page.$('button[aria-label="Siguiente"], .pagination-next, [data-testid="next-page"]');
-      if (nextButton && pageNum < 5) { // Limitar a 5 páginas para evitar timeouts
-        const isDisabled = await nextButton.evaluate(button => {
-          return button.disabled || button.classList.contains('disabled');
-        });
-        
+      if (nextButton && pageNum < 5) {
+        const isDisabled = await nextButton.evaluate(button => button.disabled || button.classList.contains('disabled'));
         if (!isDisabled) {
           await nextButton.click();
           await page.waitForTimeout(2000);
@@ -205,12 +190,7 @@ export async function scrapeOCC(searchTerm, isVercel = false) {
 
   await browser.close();
 
-  // Solo escribir archivos si no estamos en Vercel
-  if (!isVercel) {
-    // Guardar JSON
-    fs.writeFileSync('resultados.json', JSON.stringify(results, null, 2), 'utf-8');
-    console.log(`✅ Se guardaron ${results.length} resultados en resultados.json`);
-
+  if (!runOnVercel) {
     const datosPlano = results.map(result => ({
       nombreVacante: result.nombreVacante,
       empresa: result.empresa || 'La empresa es confidencial o no se encuentra disponible',
@@ -226,35 +206,24 @@ export async function scrapeOCC(searchTerm, isVercel = false) {
       descripcion: result.descripcion,
     }));
 
-    // CSV
     if (datosPlano.length > 0) {
       const json2csvParser = new Json2csvParser({ fields: Object.keys(datosPlano[0]) });
       const csv = json2csvParser.parse(datosPlano);
       fs.writeFileSync('resultados.csv', csv, 'utf-8');
-      console.log('✅ Se guardó el archivo CSV: resultados.csv');
-    }
 
-    // Excel
-    if (datosPlano.length > 0) {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(datosPlano);
       XLSX.utils.book_append_sheet(wb, ws, 'Vacantes');
       XLSX.writeFile(wb, 'resultados.xlsx');
-      console.log('✅ Se guardó el archivo Excel: resultados.xlsx');
-    }
 
-    // PDF
-    if (datosPlano.length > 0) {
       try {
         const doc = new PDFDocument({ margin: 30, size: 'A4' });
         const pdfStream = fs.createWriteStream('resultados.pdf');
         doc.pipe(pdfStream);
-
         doc.fontSize(18).text(`Resultados de Búsqueda: ${searchTerm}`, { align: 'center', underline: true });
         doc.moveDown(1);
         doc.fontSize(12).text(`Total de vacantes encontradas: ${datosPlano.length}`);
         doc.moveDown(1);
-
         datosPlano.forEach((item, i) => {
           doc.fontSize(14).text(`Vacante ${i + 1}`, { underline: true });
           doc.fontSize(12).text(`Título: ${item.nombreVacante}`);
@@ -274,14 +243,13 @@ export async function scrapeOCC(searchTerm, isVercel = false) {
           doc.text('----------------------------------------');
           doc.moveDown(1);
         });
-
         doc.end();
-        pdfStream.on('finish', () => {
-          console.log('✅ Se guardó el archivo PDF: resultados.pdf');
-        });
+        pdfStream.on('finish', () => console.log('✅ PDF generado'));
       } catch (error) {
         console.error('❌ Error al generar PDF:', error.message);
       }
+
+      fs.writeFileSync('resultados.json', JSON.stringify(results, null, 2), 'utf-8');
     }
   }
 
@@ -301,4 +269,7 @@ async function main() {
   }
 }
 
-main();
+if (process.env.NODE_ENV !== 'production') {
+  // Evitar ejecutar main() en Vercel
+  main();
+}
